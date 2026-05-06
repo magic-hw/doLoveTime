@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.DpOffset
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -346,12 +348,13 @@ fun HomeScreen(
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("日历记录", fontWeight = FontWeight.Bold)
-                                recent7Days.reversed().chunked(4).forEach { rowDays ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        rowDays.forEach { d ->
-                                            val cnt = eventsByDate[d]?.size ?: 0
-                                            Button(onClick = { selectedDate = d }) { Text("${d.dayOfMonth}${if (cnt > 0) "*$cnt" else ""}") }
-                                        }
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(recent7Days.reversed()) { d ->
+                                        val cnt = eventsByDate[d]?.size ?: 0
+                                        Button(
+                                            onClick = { selectedDate = d },
+                                            modifier = Modifier.height(32.dp)
+                                        ) { Text("${d.dayOfMonth}${if (cnt > 0) "*$cnt" else ""}", fontSize = 11.sp) }
                                     }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -380,12 +383,12 @@ fun HomeScreen(
                     items(visibleDayEvents) { e ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("对象：${e.partnerName ?: "自己"}")
-                                Text("地点：${e.location}")
+                                Text("对象：${e.partnerName ?: "自己"}", fontSize = 13.sp)
+                                Text("地点：${e.location}", fontSize = 12.sp)
                                 var menuExpanded by remember { mutableStateOf(false) }
                                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                     val startTime = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
-                                    Text("开始：$startTime | 方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分")
+                                    Text("开始：$startTime | 方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分", fontSize = 12.sp)
                                     Box {
                                         Text("⋮", modifier = Modifier.clickable { menuExpanded = true })
                                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -407,7 +410,7 @@ fun HomeScreen(
                                         }
                                     }
                                 }
-                                if (e.note.isNotBlank()) Text("备注：${e.note}")
+                                if (e.note.isNotBlank()) Text("备注：${e.note}", fontSize = 12.sp)
                             }
                         }
                     }
@@ -419,10 +422,16 @@ fun HomeScreen(
                                 Text("记录日期：$selectedDate")
                                 OutlinedTextField(startTimeText, { startTimeText = it }, label = { Text("开始时间(HH:mm)") })
 
-                                PickerField("对象", selectedPartnerLabel) { partnerExpanded = true }
-                                DropdownMenu(expanded = partnerExpanded, onDismissRequest = { partnerExpanded = false }) {
-                                    DropdownMenuItem(text = { Text("单身/自己") }, onClick = { selectedPartnerId = null; partnerExpanded = false })
-                                    state.partners.forEach { p2 -> DropdownMenuItem(text = { Text(p2.nickname) }, onClick = { selectedPartnerId = p2.id; partnerExpanded = false }) }
+                                Box {
+                                    PickerField("对象", selectedPartnerLabel) { partnerExpanded = true }
+                                    DropdownMenu(
+                                        expanded = partnerExpanded,
+                                        onDismissRequest = { partnerExpanded = false },
+                                        offset = DpOffset(0.dp, 48.dp)
+                                    ) {
+                                        DropdownMenuItem(text = { Text("单身/自己") }, onClick = { selectedPartnerId = null; partnerExpanded = false })
+                                        state.partners.forEach { p2 -> DropdownMenuItem(text = { Text(p2.nickname) }, onClick = { selectedPartnerId = p2.id; partnerExpanded = false }) }
+                                    }
                                 }
 
                                 OutlinedTextField(location, { location = it }, label = { Text("地点") })
@@ -432,9 +441,15 @@ fun HomeScreen(
                                     if (fine || coarse) location = readCurrentAddress(context) ?: location else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                                 }) { Text("获取当前位置地址") }
 
-                                PickerField("方式", method) { methodExpanded = true }
-                                DropdownMenu(expanded = methodExpanded, onDismissRequest = { methodExpanded = false }) {
-                                    methods.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { method = m; methodExpanded = false }) }
+                                Box {
+                                    PickerField("方式", method) { methodExpanded = true }
+                                    DropdownMenu(
+                                        expanded = methodExpanded,
+                                        onDismissRequest = { methodExpanded = false },
+                                        offset = DpOffset(0.dp, 48.dp)
+                                    ) {
+                                        methods.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { method = m; methodExpanded = false }) }
+                                    }
                                 }
 
                                 OutlinedTextField(duration, { duration = it }, label = { Text("时长(分钟)") })
