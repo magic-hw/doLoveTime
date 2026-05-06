@@ -34,6 +34,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -287,6 +289,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val methods = listOf("体外", "内射", "戴套", "口", "手", "情趣用品", "其它")
+    val tabs = listOf("记录", "统计", "对象管理", "隐私设置")
 
     var partnerName by remember { mutableStateOf("") }
     var partnerNote by remember { mutableStateOf("") }
@@ -301,10 +304,12 @@ fun HomeScreen(
     var timerRunning by remember { mutableStateOf(false) }
     var timerSeconds by remember { mutableStateOf(0L) }
     var editingEventId by remember { mutableStateOf<Long?>(null) }
+    var currentTab by remember { mutableStateOf(0) }
 
     var calendarMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
-    var timeText by remember { mutableStateOf(java.time.LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
+    var calendarExpanded by remember { mutableStateOf(false) }
+    var startTimeText by remember { mutableStateOf(java.time.LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         val ok = granted[Manifest.permission.ACCESS_FINE_LOCATION] == true || granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true
@@ -320,120 +325,167 @@ fun HomeScreen(
     val selectedPartnerLabel = state.partners.firstOrNull { it.id == selectedPartnerId }?.nickname ?: "单身/自己"
     val eventsByDate = state.events.groupBy { millisToLocalDate(it.startMillis) }
     val selectedDayEvents = eventsByDate[selectedDate].orEmpty()
+    val recent7Days = (0L..6L).map { LocalDate.now().minusDays(it) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("doLoveTime") }) }) { p ->
-        LazyColumn(Modifier.fillMaxSize().padding(p).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("隐私设置", fontWeight = FontWeight.Bold)
-                        OutlinedTextField(autoLockInput, { autoLockInput = it }, label = { Text("自动锁定(分钟)") })
-                        Button({ onSetAutoLockMinutes(autoLockInput.toLongOrNull() ?: 1L) }) { Text("保存") }
-                    }
-                }
-            }
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("对象管理", fontWeight = FontWeight.Bold)
-                        OutlinedTextField(partnerName, { partnerName = it }, label = { Text("对象昵称") })
-                        OutlinedTextField(partnerNote, { partnerNote = it }, label = { Text("备注") })
-                        Button({ onAddPartner(partnerName, partnerNote); partnerName = ""; partnerNote = "" }) { Text("添加对象") }
-                        Text("对象列表(${state.partners.size})", fontWeight = FontWeight.Bold)
-                        if (state.partners.isEmpty()) Text("暂无对象") else state.partners.forEach { Text("- ${it.nickname}${if (it.note.isNotBlank()) "（${it.note}）" else ""}") }
-                    }
-                }
-            }
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("日历记录", fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button({ calendarMonth = calendarMonth.minusMonths(1) }) { Text("<") }
-                            Text(calendarMonth.format(DateTimeFormatter.ofPattern("yyyy-MM")))
-                            Button({ calendarMonth = calendarMonth.plusMonths(1) }) { Text(">") }
-                        }
-                        CalendarGrid(calendarMonth, selectedDate, eventsByDate, onSelect = { selectedDate = it })
-                        Text("${selectedDate} 记录：${selectedDayEvents.size}")
-                        if (selectedDayEvents.isEmpty()) Text("当天无记录")
-                    }
+        Column(Modifier.fillMaxSize().padding(p)) {
+            TabRow(selectedTabIndex = currentTab) {
+                tabs.forEachIndexed { idx, title ->
+                    Tab(selected = currentTab == idx, onClick = { currentTab = idx }, text = { Text(title) })
                 }
             }
 
-            items(selectedDayEvents) { e ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("对象：${e.partnerName ?: "自己"}")
-                        Text("地点：${e.location}")
-                        Text("方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分")
-                        if (e.note.isNotBlank()) Text("备注：${e.note}")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                editingEventId = e.id
-                                selectedPartnerId = e.partnerId
-                                location = e.location
-                                method = e.method
-                                duration = (((e.endMillis - e.startMillis) / 60000).coerceAtLeast(1)).toString()
-                                eventNote = e.note
-                                selectedDate = millisToLocalDate(e.endMillis)
-                                timeText = java.time.Instant.ofEpochMilli(e.endMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
-                            }) { Text("编辑") }
-                            Button(onClick = { onDeleteEvent(e.id) }) { Text("删除") }
+            when (currentTab) {
+                0 -> LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("日历记录", fontWeight = FontWeight.Bold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    recent7Days.reversed().forEach { d ->
+                                        val cnt = eventsByDate[d]?.size ?: 0
+                                        Button(onClick = { selectedDate = d }) { Text("${d.dayOfMonth}${if (cnt > 0) "*$cnt" else ""}") }
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("已选日期：$selectedDate")
+                                    Button(onClick = { calendarExpanded = !calendarExpanded }) { Text(if (calendarExpanded) "收起月历" else "展开月历") }
+                                }
+                                if (calendarExpanded) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button({ calendarMonth = calendarMonth.minusMonths(1) }) { Text("<") }
+                                        Text(calendarMonth.format(DateTimeFormatter.ofPattern("yyyy-MM")))
+                                        Button({ calendarMonth = calendarMonth.plusMonths(1) }) { Text(">") }
+                                    }
+                                    CalendarGrid(calendarMonth, selectedDate, eventsByDate, onSelect = { selectedDate = it })
+                                }
+                                Text("${selectedDate} 记录：${selectedDayEvents.size}")
+                                if (selectedDayEvents.isEmpty()) Text("当天无记录")
+                            }
+                        }
+                    }
+
+                    items(selectedDayEvents) { e ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("对象：${e.partnerName ?: "自己"}")
+                                Text("地点：${e.location}")
+                                val startTime = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                                Text("开始：$startTime | 方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分")
+                                if (e.note.isNotBlank()) Text("备注：${e.note}")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = {
+                                        editingEventId = e.id
+                                        selectedPartnerId = e.partnerId
+                                        location = e.location
+                                        method = e.method
+                                        duration = (((e.endMillis - e.startMillis) / 60000).coerceAtLeast(1)).toString()
+                                        eventNote = e.note
+                                        selectedDate = millisToLocalDate(e.startMillis)
+                                        startTimeText = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    }) { Text("编辑") }
+                                    Button(onClick = { onDeleteEvent(e.id) }) { Text("删除") }
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(if (editingEventId == null) "新增记录" else "编辑记录", fontWeight = FontWeight.Bold)
+                                Text("记录日期：$selectedDate")
+                                OutlinedTextField(startTimeText, { startTimeText = it }, label = { Text("开始时间(HH:mm)") })
+
+                                PickerField("对象", selectedPartnerLabel) { partnerExpanded = true }
+                                DropdownMenu(expanded = partnerExpanded, onDismissRequest = { partnerExpanded = false }) {
+                                    DropdownMenuItem(text = { Text("单身/自己") }, onClick = { selectedPartnerId = null; partnerExpanded = false })
+                                    state.partners.forEach { p2 -> DropdownMenuItem(text = { Text(p2.nickname) }, onClick = { selectedPartnerId = p2.id; partnerExpanded = false }) }
+                                }
+
+                                OutlinedTextField(location, { location = it }, label = { Text("地点") })
+                                Button(onClick = {
+                                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                                    if (fine || coarse) location = readCurrentAddress(context) ?: location else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                }) { Text("获取当前位置地址") }
+
+                                PickerField("方式", method) { methodExpanded = true }
+                                DropdownMenu(expanded = methodExpanded, onDismissRequest = { methodExpanded = false }) {
+                                    methods.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { method = m; methodExpanded = false }) }
+                                }
+
+                                OutlinedTextField(duration, { duration = it }, label = { Text("时长(分钟)") })
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button({ timerRunning = true }) { Text("开始") }
+                                    Button({ timerRunning = false }) { Text("停止") }
+                                    Button({ timerRunning = false; timerSeconds = 0; duration = "1" }) { Text("重置") }
+                                }
+                                Text("计时：${timerSeconds / 60}分 ${timerSeconds % 60}秒")
+
+                                OutlinedTextField(eventNote, { eventNote = it }, label = { Text("备注") })
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = {
+                                        val d = duration.toLongOrNull() ?: 0
+                                        val start = parseSelectedDateTimeMillis(selectedDate, startTimeText)
+                                        val end = start + d * 60_000
+                                        if (editingEventId == null) onAddEvent(selectedPartnerId, location, method, d, eventNote, end)
+                                        else onUpdateEvent(editingEventId!!, selectedPartnerId, location, method, d, eventNote, end)
+                                        editingEventId = null
+                                        location = ""
+                                        method = methods.first()
+                                        duration = "30"
+                                        eventNote = ""
+                                        timerSeconds = 0
+                                        timerRunning = false
+                                        startTimeText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    }) { Text(if (editingEventId == null) "保存记录" else "保存修改") }
+                                    if (editingEventId != null) Button(onClick = { editingEventId = null }) { Text("取消编辑") }
+                                }
+                            }
                         }
                     }
                 }
-            }
-
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (editingEventId == null) "新增记录" else "编辑记录", fontWeight = FontWeight.Bold)
-                        Text("记录日期：$selectedDate")
-                        OutlinedTextField(timeText, { timeText = it }, label = { Text("时间(HH:mm)") })
-
-                        PickerField("对象", selectedPartnerLabel) { partnerExpanded = true }
-                        DropdownMenu(expanded = partnerExpanded, onDismissRequest = { partnerExpanded = false }) {
-                            DropdownMenuItem(text = { Text("单身/自己") }, onClick = { selectedPartnerId = null; partnerExpanded = false })
-                            state.partners.forEach { p2 -> DropdownMenuItem(text = { Text(p2.nickname) }, onClick = { selectedPartnerId = p2.id; partnerExpanded = false }) }
+                1 -> LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("统计分析", fontWeight = FontWeight.Bold)
+                                Text("本周：${state.stats.week.count} 次 / ${state.stats.week.totalMinutes} 分钟")
+                                Text("本月：${state.stats.month.count} 次 / ${state.stats.month.totalMinutes} 分钟")
+                                val yearEvents = state.events.filter {
+                                    java.time.Instant.ofEpochMilli(it.startMillis).atZone(ZoneId.systemDefault()).year == LocalDate.now().year
+                                }
+                                Text("本年：${yearEvents.size} 次 / ${yearEvents.sumOf { (it.endMillis - it.startMillis) / 60000 }} 分钟")
+                                Text("地点排行：")
+                                if (state.stats.topLocations.isEmpty()) Text("暂无数据")
+                                state.stats.topLocations.forEachIndexed { i, l -> Text("${i + 1}. ${l.location} (${l.count}次)") }
+                            }
                         }
-
-                        OutlinedTextField(location, { location = it }, label = { Text("地点") })
-                        Button(onClick = {
-                            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                            if (fine || coarse) location = readCurrentAddress(context) ?: location else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                        }) { Text("获取当前位置地址") }
-
-                        PickerField("方式", method) { methodExpanded = true }
-                        DropdownMenu(expanded = methodExpanded, onDismissRequest = { methodExpanded = false }) {
-                            methods.forEach { m -> DropdownMenuItem(text = { Text(m) }, onClick = { method = m; methodExpanded = false }) }
+                    }
+                }
+                2 -> LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("对象管理", fontWeight = FontWeight.Bold)
+                                OutlinedTextField(partnerName, { partnerName = it }, label = { Text("对象昵称") })
+                                OutlinedTextField(partnerNote, { partnerNote = it }, label = { Text("备注") })
+                                Button({ onAddPartner(partnerName, partnerNote); partnerName = ""; partnerNote = "" }) { Text("添加对象") }
+                                Text("对象列表(${state.partners.size})", fontWeight = FontWeight.Bold)
+                                if (state.partners.isEmpty()) Text("暂无对象") else state.partners.forEach { Text("- ${it.nickname}${if (it.note.isNotBlank()) "（${it.note}）" else ""}") }
+                            }
                         }
-
-                        OutlinedTextField(duration, { duration = it }, label = { Text("时长(分钟)") })
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button({ timerRunning = true }) { Text("开始") }
-                            Button({ timerRunning = false }) { Text("停止") }
-                            Button({ timerRunning = false; timerSeconds = 0; duration = "1" }) { Text("重置") }
-                        }
-                        Text("计时：${timerSeconds / 60}分 ${timerSeconds % 60}秒")
-
-                        OutlinedTextField(eventNote, { eventNote = it }, label = { Text("备注") })
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                val d = duration.toLongOrNull() ?: 0
-                                val end = parseSelectedDateTimeMillis(selectedDate, timeText)
-                                if (editingEventId == null) onAddEvent(selectedPartnerId, location, method, d, eventNote, end)
-                                else onUpdateEvent(editingEventId!!, selectedPartnerId, location, method, d, eventNote, end)
-                                editingEventId = null
-                                location = ""
-                                method = methods.first()
-                                duration = "30"
-                                eventNote = ""
-                                timerSeconds = 0
-                                timerRunning = false
-                                timeText = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-                            }) { Text(if (editingEventId == null) "保存记录" else "保存修改") }
-                            if (editingEventId != null) Button(onClick = { editingEventId = null }) { Text("取消编辑") }
+                    }
+                }
+                else -> LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("隐私设置", fontWeight = FontWeight.Bold)
+                                OutlinedTextField(autoLockInput, { autoLockInput = it }, label = { Text("自动锁定(分钟)") })
+                                Button({ onSetAutoLockMinutes(autoLockInput.toLongOrNull() ?: 1L) }) { Text("保存") }
+                            }
                         }
                     }
                 }
