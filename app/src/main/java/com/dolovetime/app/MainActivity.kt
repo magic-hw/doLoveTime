@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -309,6 +310,7 @@ fun HomeScreen(
     var calendarMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var calendarExpanded by remember { mutableStateOf(false) }
+    var dayEventsExpanded by remember { mutableStateOf(false) }
     var startTimeText by remember { mutableStateOf(java.time.LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -326,6 +328,9 @@ fun HomeScreen(
     val eventsByDate = state.events.groupBy { millisToLocalDate(it.startMillis) }
     val selectedDayEvents = eventsByDate[selectedDate].orEmpty()
     val recent7Days = (0L..6L).map { LocalDate.now().minusDays(it) }
+    val visibleDayEvents = if (dayEventsExpanded) selectedDayEvents else selectedDayEvents.take(1)
+
+    LaunchedEffect(selectedDate) { dayEventsExpanded = false }
 
     Scaffold(topBar = { TopAppBar(title = { Text("doLoveTime") }) }) { p ->
         Column(Modifier.fillMaxSize().padding(p)) {
@@ -341,10 +346,12 @@ fun HomeScreen(
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("日历记录", fontWeight = FontWeight.Bold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    recent7Days.reversed().forEach { d ->
-                                        val cnt = eventsByDate[d]?.size ?: 0
-                                        Button(onClick = { selectedDate = d }) { Text("${d.dayOfMonth}${if (cnt > 0) "*$cnt" else ""}") }
+                                recent7Days.reversed().chunked(4).forEach { rowDays ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        rowDays.forEach { d ->
+                                            val cnt = eventsByDate[d]?.size ?: 0
+                                            Button(onClick = { selectedDate = d }) { Text("${d.dayOfMonth}${if (cnt > 0) "*$cnt" else ""}") }
+                                        }
                                     }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -361,31 +368,46 @@ fun HomeScreen(
                                 }
                                 Text("${selectedDate} 记录：${selectedDayEvents.size}")
                                 if (selectedDayEvents.isEmpty()) Text("当天无记录")
+                                if (selectedDayEvents.size > 1) {
+                                    Button(onClick = { dayEventsExpanded = !dayEventsExpanded }) {
+                                        Text(if (dayEventsExpanded) "收起当天记录" else "展开当天记录")
+                                    }
+                                }
                             }
                         }
                     }
 
-                    items(selectedDayEvents) { e ->
+                    items(visibleDayEvents) { e ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("对象：${e.partnerName ?: "自己"}")
                                 Text("地点：${e.location}")
-                                val startTime = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
-                                Text("开始：$startTime | 方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分")
-                                if (e.note.isNotBlank()) Text("备注：${e.note}")
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = {
-                                        editingEventId = e.id
-                                        selectedPartnerId = e.partnerId
-                                        location = e.location
-                                        method = e.method
-                                        duration = (((e.endMillis - e.startMillis) / 60000).coerceAtLeast(1)).toString()
-                                        eventNote = e.note
-                                        selectedDate = millisToLocalDate(e.startMillis)
-                                        startTimeText = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
-                                    }) { Text("编辑") }
-                                    Button(onClick = { onDeleteEvent(e.id) }) { Text("删除") }
+                                var menuExpanded by remember { mutableStateOf(false) }
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    val startTime = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    Text("开始：$startTime | 方式：${e.method} | 时长：${(e.endMillis - e.startMillis) / 60000} 分")
+                                    Box {
+                                        Text("⋮", modifier = Modifier.clickable { menuExpanded = true })
+                                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                            DropdownMenuItem(text = { Text("编辑") }, onClick = {
+                                                menuExpanded = false
+                                                editingEventId = e.id
+                                                selectedPartnerId = e.partnerId
+                                                location = e.location
+                                                method = e.method
+                                                duration = (((e.endMillis - e.startMillis) / 60000).coerceAtLeast(1)).toString()
+                                                eventNote = e.note
+                                                selectedDate = millisToLocalDate(e.startMillis)
+                                                startTimeText = java.time.Instant.ofEpochMilli(e.startMillis).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                                            })
+                                            DropdownMenuItem(text = { Text("删除") }, onClick = {
+                                                menuExpanded = false
+                                                onDeleteEvent(e.id)
+                                            })
+                                        }
+                                    }
                                 }
+                                if (e.note.isNotBlank()) Text("备注：${e.note}")
                             }
                         }
                     }
@@ -522,7 +544,14 @@ private fun CalendarGrid(
                         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             if (d != null) {
                                 val cnt = eventsByDate[d]?.size ?: 0
-                                Text(if (cnt > 0) "${d.dayOfMonth}*" else d.dayOfMonth.toString())
+                                if (cnt > 0) {
+                                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                        Text(d.dayOfMonth.toString())
+                                        Text("${cnt}条", fontSize = 9.sp)
+                                    }
+                                } else {
+                                    Text(d.dayOfMonth.toString())
+                                }
                             }
                         }
                     }
