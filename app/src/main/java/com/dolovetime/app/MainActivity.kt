@@ -356,7 +356,7 @@ class MainViewModelFactory(
 @Composable
 fun AppRoot(vm: MainViewModel) {
     val state by vm.state.collectAsStateCompat()
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
 
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
